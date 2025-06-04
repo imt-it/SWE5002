@@ -1,0 +1,14 @@
+# ---------------------------------------------------
+# [Requirements]
+# ---------------------------------------------------
+#
+# [Python]:
+#   [Version]:
+#       Requires Python 3.x or higher, with Standard Library (built-in)
+#   [Modules]:
+#       [x] random
+#       [x] time
+#
+# [Notes]:
+#   No additional or external dependencies required.
+# ---------------------------------------------------
