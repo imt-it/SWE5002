@@ -289,7 +289,7 @@ class CL_GraphManager:
 
     # This method lists all stations for a given line, including their internal branches and connections
     def list_stations_by_line(self, selected_line):
-        FN_Print(f"\nStations for Line {selected_line}:", 0)
+        FN_Print(f"\n[INFO]: Stations for Line {selected_line}:", 0)
         line_info = self.lines.get(selected_line, {})
         if line_info:
             arrow = f"{Colors['blue']}<->{Colors['default']}"
@@ -298,7 +298,7 @@ class CL_GraphManager:
             FN_Print(f"Internal Connections: " + (", ".join([f"{a} {arrow} {b}" for a, b in line_info['internal_connections']]) or "-"), 0)
             FN_Print(f"External Connections: " + (", ".join([f"{a} {arrow} {b}" for a, b in line_info['external_connections']]) or "-"), 0)
         else:
-            FN_Print(f"No stations found for the selected line.", 0)
+            FN_Print(f"[INFO]: No stations found for the selected line.", 0)
 
 # --- Main Program
 # Loads the station and connection data, and provides a user interface for finding paths
@@ -388,10 +388,11 @@ def main():
         elif choice == '9':
             # List all lines available in the graph
             lines = list(graph_manager.lines.keys())
+            print("\n[INFO]: Available Lines:")
             for i, line in enumerate(lines, 1):
                 FN_Print(f"{i}. {line}", 0)
             # Prompt the user to select a line
-            line_choice = input("\n[INPUT]: Enter the number of the line to view stations: ")
+            line_choice = input("[INPUT]: Enter the number of the line to view stations: ")
             try:
                 # Validate the input and select the line if it exists
                 line_choice = int(line_choice)
