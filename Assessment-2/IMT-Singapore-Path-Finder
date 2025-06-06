@@ -328,33 +328,35 @@ def main():
     # Primary Execution Thread
     while True:
         # Display the main menu options
-        FN_Print(f"[INFO]: Please select one of the following options.", 0)
+        FN_Print(f"\n[INFO]: Please select one of the following options.", 0)
         FN_Print(f"{Colors['blue']}[1]{Colors['default']}. Find shortest path (Number of stations)", 0)
         FN_Print(f"{Colors['cyan']}[2]{Colors['default']}. Find shortest path (Distance traveled)", 0)
         FN_Print(f"{Colors['green']}[3]{Colors['default']}. Find fastest path (Time consumed)", 0)
         FN_Print(f"{Colors['purple']}[9]{Colors['default']}. List all Stations by Line", 0)
         FN_Print(f"{Colors['red']}[0]{Colors['default']}. Exit", 0)
-        choice = input("Enter your choice: ")
+        choice = input("[INPUT]: Enter your choice: ")
 
         # Handle user choices for finding paths
         global use_realistic_time_durations
         if choice in ['1', '2', '3']:
             mode = 'unweighted' if choice == '1' else 'distance' if choice == '2' else 'time'
-            while True:
-                user_input = str(input("[INPUT]: Do you want to use default time assumptions (Default: Yes)? [(Y)/N]: "))
-                if user_input in ('y', 'Y', ''):
-                    use_realistic_time_durations = False
-                    break
-                elif user_input in ('n', 'N'):
-                    use_realistic_time_durations = True
-                    break
-                else:
-                    print("[INPUT]: Please press \"Y\" for Yes, \"N\" or Enter for No.")
+            if choice == '3':
+                # If the user selected the fastest path, ask if they want to use realistic time durations
+                while True:
+                    user_input = str(input("[INPUT]: Do you want to use default time assumptions (Default: Yes)? [(Y)/N]: "))
+                    if user_input in ('y', 'Y', ''):
+                        use_realistic_time_durations = False
+                        break
+                    elif user_input in ('n', 'N'):
+                        use_realistic_time_durations = True
+                        break
+                    else:
+                        print("[INPUT]: Please press \"Y\" for Yes, \"N\" or Enter for No.")
             # Load connections based on the selected mode
             graph_manager.load_connections(connection_csv, mode)
             # Prompt for start and end station codes
-            start = input("Enter start station code (leave blank for random): ").strip()
-            end = input("Enter end station code (leave blank for random): ").strip()
+            start = input("\n[INPUT]: Enter start station code (leave blank for random): ").strip()
+            end = input("[INPUT]: Enter end station code (leave blank for random): ").strip()
             # If the user did not provide start or end station codes, select random ones
             if not start:
                 start = random.choice(list(graph_manager.stations.keys()))
@@ -389,7 +391,7 @@ def main():
             for i, line in enumerate(lines, 1):
                 FN_Print(f"{i}. {line}", 0)
             # Prompt the user to select a line
-            line_choice = input("Enter the number of the line to view stations: ")
+            line_choice = input("\n[INPUT]: Enter the number of the line to view stations: ")
             try:
                 # Validate the input and select the line if it exists
                 line_choice = int(line_choice)
@@ -399,9 +401,9 @@ def main():
                     # List stations for the selected line
                     graph_manager.list_stations_by_line(selected_line)
                 else:
-                    FN_Print(f"Invalid line number. Please try again.", 0)
+                    FN_Print(f"[INPUT]: Invalid line number. Please try again.", 0)
             except ValueError:
-                FN_Print(f"Invalid input. Please enter a number.", 0)
+                FN_Print(f"[INPUT]: Invalid input. Please enter a number.", 0)
         
         # Exit the program
         elif choice == '0':
