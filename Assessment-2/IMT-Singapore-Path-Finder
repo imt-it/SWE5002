@@ -1,0 +1,403 @@
+# University of Bolton - Greater Manchester
+# SWE5002 - Data Structures and Algorithms
+# Tutor: Stylianos Angelopoulos
+# Assessment 2
+# Student: Ioannis Marios Tsiakoulias 
+# Program Name: IMT-Airport-Manager
+# -
+# [Assessment - Brief]:
+# -
+# Design and implement a data structure suitable to represent the Singapore metro, keeping info of metro stations.
+# Each metro station belongs to one line and is connected to one or two other stations of the same line.
+# Also stations of different lines are connected at the points where lines cross.
+# Station information is available as a CSV file: https://www.kaggle.com/datasets/shengjunlim/singapore-mrt-lrt-stations-with-coordinates
+# A map of the stations can be found here: https://mrtmapsingapore.com/
+# We also need the transition time between two stations.
+# This is not available, and you can use a random number between 2 and 8 minutes. 
+# Transition time when changing line will be assumed to be fixed: 5 minutes.
+# [1] Implement a Graph Data Structure to represent stations, connections (specifying the type of connection and transition time).
+# [2] Load the station data from the CSV file and populate the graph.
+# [3] Find the shortest path (fewer stops) between two stations.
+# [4] Find the fastest route based on travel time.
+# -
+
+# --- Imported Modules
+import csv  # Used for CSV file operations
+import networkx  # Used for graph operations
+import math  # Used for graph operations
+import random  # Used for random station selection
+
+# --- Color Definitions
+# These are ANSI escape codes for terminal Colors
+Colors = {
+    "black": "\033[30m",
+    "white": "\033[97m",
+    "red": "\033[91m",
+    "orange": "\033[38;5;214m",
+    "yellow": "\033[93m",
+    "green": "\033[92m",
+    "cyan": "\033[96m",
+    "blue": "\033[94m",
+    "pink": "\033[95m",
+    "purple": "\033[35m",
+    "default": "\033[0m"
+}
+
+# --- Custom Print Function
+# This function prints messages with color coding and debug options
+def FN_Print(message, category):
+    # Category 0 is for normal messages, category 1 is for debug messages
+    if category == 0: # Normal output (always shown)
+        print(message)
+    elif category == 1 and enable_debug: # Debug output (shown only if enable_debug is True)
+        print(f"{Colors['orange']}[DEBUG]: {message}{Colors['default']}")
+
+# --- Station Class
+# This class represents a train station with its attributes
+class CL_Station:
+    # Initialization
+    def __init__(self, index, station_id, name_caps, codes, latitude, longitude, train_type, name, full_name):
+        self.index = int(index)  # Index of the station from the CSV
+        self.station_id = station_id  # Unique identifier for the station from the CSV
+        self.name_caps = name_caps  # Uppercase name of the station from the CSV
+        self.codes = codes.split('/')  # Multiple code separator from the CSV
+        self.latitude = float(latitude)  # Latitude of the station from the CSV
+        self.longitude = float(longitude)  # Longitude of the station from the CSV
+        self.train_type = train_type  # Type of the train (MRT or LRT) from the CSV
+        self.name = name  # Name of the station from the CSV
+        self.full_name = full_name  # Full name of the station from the CSV
+
+# --- CSV File Class
+# This class handles reading from a CSV file and provides methods to open, read, and close the file
+class CL_CSVHandler:
+    # Initialization
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.file = None
+        self.reader = None
+    
+    # Opens the CSV file for reading
+    def open(self):
+        FN_Print(f"Opening CSV file: {self.file_path}", 1)
+        self.file = open(self.file_path, 'r', encoding='utf-8')
+        self.reader = csv.DictReader(self.file)
+    
+    # Reads all rows from the CSV file
+    def read_rows(self):
+        if self.reader is None:
+            raise Exception("CSV file not opened. Call open() first.")
+        return list(self.reader)
+    
+    # Closes the CSV file
+    def close(self):
+        if self.file:
+            self.file.close()
+
+# --- Graph Manager Class
+# This class manages the graph of train stations, their connections, and provides methods to load data and find paths according to different criteria
+class CL_GraphManager:
+    
+    # Initialization
+    def __init__(self):
+        self.graph = networkx.Graph()  # Graph to hold the stations and their connections
+        self.stations = {}  # Dictionary to hold station codes and their Station objects
+        self.lines = {}  # Dictionary to hold lines and their connections
+        self.speed_meters_per_sec_mrt_train = 40.0  # Average speed of MRT trains in meters per second
+        self.speed_meters_per_sec_lrt_train = 20.0  # Average speed of LRT trains in meters per second
+        self.branch_delay_sec = 150  # Delay for internal branches in seconds
+        self.internal_connection_delay_sec = 300  # Delay for internal connections in seconds
+        self.external_connection_delay_sec = 600  # Delay for external connections in seconds
+    
+    # This method loads station data from a CSV file and adds them to the graph
+    def load_stations(self, csv_handler):
+        csv_handler.open()
+        # Create Station objects for each row in the CSV file
+        for row in csv_handler.read_rows():
+            station = CL_Station(
+                index=row['Index'],
+                station_id=row['Station_ID'],
+                name_caps=row['Station_Name_Caps'],
+                codes=row['Station_Codes'],
+                latitude=row['Latitude'],
+                longitude=row['Longitude'],
+                train_type=row['Train_Type'],
+                name=row['Station_Name'],
+                full_name=row['Full_Station_Name']
+            )
+            # Add the station to the graph and the stations dictionary
+            for code in station.codes:
+                FN_Print(f"Creating station: {code} - {station.name}", 1)
+                self.stations[code] = station
+                self.graph.add_node(code, station=station)
+        # Close the CSV file after reading
+        csv_handler.close()
+
+    # This method loads train connections from a CSV file and adds them to the graph
+    def load_connections(self, csv_handler, mode):
+        # Open the CSV file for reading
+        csv_handler.open()
+        # Initialize lines dictionary (if not already done)
+        for row in csv_handler.read_rows():
+            line_name = row['Line_Name']
+            if line_name not in self.lines:
+                self.lines[line_name] = {
+                    'stations': [],
+                    'internal_branches': [],
+                    'internal_connections': [],
+                    'external_connections': []
+                }
+            from_codes = row['Station_Code'].split('/')
+            connections = {
+                'Direct_Connection_Forward': row['Direct_Connection_Forward'],
+                'Direct_Connection_Reverse': row['Direct_Connection_Reverse'],
+                'Internal_Connection_Branch': row['Internal_Connection_Branch'],
+                'Internal_Connection_Other_Line': row['Internal_Connection_Other_Line'],
+                'External_Connection_Other_Line': row['External_Connection_Other_Line']
+            }
+            for from_code in from_codes:
+                # Check if the from_code exists in the stations dictionary
+                if from_code not in self.stations:
+                    continue
+                # Check if the from_code is already in the line's stations and ingore duplicates
+                if from_code not in self.lines[line_name]['stations']:
+                    self.lines[line_name]['stations'].append(from_code)
+                # Iterate through each connection type
+                for conn_type, connection in connections.items():
+                    # Check if the connection type is valid
+                    if connection:
+                        # Split the connection string by '/' to get individual station codes
+                        for to_code in connection.split('/'):
+                            # Check if the to_code is empty
+                            if not to_code:
+                                FN_Print(f"Debug: Empty connection encountered for {from_code} in {conn_type}", 1)
+                                continue
+                            # Check if the to_code exists in the stations dictionary
+                            if to_code in self.stations:
+                                self.add_edge(from_code, to_code, conn_type, mode)
+                                # Add the connection to the lines dictionary based on the connection type
+                                if conn_type == 'Internal_Connection_Branch':
+                                    self.lines[line_name]['internal_branches'].append((from_code, to_code))
+                                elif conn_type == 'Internal_Connection_Other_Line':
+                                    self.lines[line_name]['internal_connections'].append((from_code, to_code))
+                                elif conn_type == 'External_Connection_Other_Line':
+                                    self.lines[line_name]['external_connections'].append((from_code, to_code))
+        # Close the CSV file after reading
+        csv_handler.close()
+
+    # This method calculates the distance (in meters) between two geographical points using the Haversine formula
+    def haversine_distance(self, lat1, lon1, lat2, lon2):
+        R = 6371  # Earth radius in kilometers
+        dlat = math.radians(lat2 - lat1) # Convert latitude difference to radians
+        dlon = math.radians(lon2 - lon1) # Convert longitude difference to radians
+        # Haversine formula 
+        a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2 
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        # Return distance in meters (by default the value is in kilometers, we multiply by 1000 to get meters)
+        return R * c * 1000     
+
+    # Adds an edge to the graph based on the train connection type and graph weight mode
+    def add_edge(self, from_code, to_code, conn_type='direct', mode='time'):
+        from_station = self.stations[from_code]
+        to_station = self.stations[to_code]
+        distance_m = self.haversine_distance(from_station.latitude, from_station.longitude, to_station.latitude, to_station.longitude)
+        conn_str = 'Instant Connection'
+        # Determine the weight based on the mode and connection type
+        # Unweighted mode means all edges have equal weight, and it actually just counts the number of stations in a path
+        if mode == 'unweighted':
+            weight = 1
+            weight_str = "Unweighted"
+        # Distance mode calculates the distance in meters (although it is 0 for non-direct connections)
+        elif mode == 'distance':
+            weight = distance_m
+            weight_str = f"{weight:.2f} m"
+            # Determine the connection type and set the connection string accordingly
+            if conn_type == 'Internal_Connection_Branch':
+                conn_str = 'Internal Branch'
+            elif conn_type == 'Internal_Connection_Other_Line':
+                conn_str = 'Internal Connection'
+            elif conn_type == 'External_Connection_Other_Line':
+                conn_str = 'External Connection'
+            else:
+                conn_str = 'Direct Connection'
+        # Time mode calculates the time in seconds based on the connection type
+        elif mode == 'time':
+            # If we use the default time durations
+            if use_realistic_time_durations == False:
+                # For Branches, Internal Connections, and External Connections, use fixed delay
+                if conn_type in ['Internal_Connection_Branch', 'Internal_Connection_Other_Line', 'External_Connection_Other_Line']:
+                    weight = 300 # Default weight for those connections set to 300 seconds (5 minutes)
+                else:
+                    # For direct connections, use a random weight between 120 (2 minutes) and 480 seconds (8 minutes)
+                    weight = random.randint(120, 480)
+                weight_str = f"{weight:.2f} sec"
+            # Else if we use realistic time durations (simulated by real-world average train speeds and calculated distances)
+            elif use_realistic_time_durations == True:
+                # Determine the connection type and calculate the weight accordingly
+                if conn_type == 'Internal_Connection_Branch':
+                    conn_str = 'Internal Branch'
+                    weight = self.branch_delay_sec
+                elif conn_type == 'Internal_Connection_Other_Line':
+                    conn_str = 'Internal Connection'
+                    weight = self.internal_connection_delay_sec
+                elif conn_type == 'External_Connection_Other_Line':
+                    conn_str = 'External Connection'
+                    weight = self.external_connection_delay_sec
+                else:
+                    conn_str = 'Direct Connection'
+                    if from_station.train_type == 'MRT':
+                        weight = distance_m / self.speed_meters_per_sec_mrt_train
+                    else:
+                        weight = distance_m / self.speed_meters_per_sec_lrt_train
+                weight_str = f"{weight:.2f} sec"
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+        # Add the edge to the graph with the calculated weight
+        FN_Print(f"Adding edge {from_code} <-> {to_code} | Type: {conn_str} | Weight: {weight_str}", 1)
+        self.graph.add_edge(from_code, to_code, weight=weight)
+
+    # This method finds uses Dijkstra's algorithm to find the fastest path between two stations while using unweighted edges
+    def find_fastest_path(self, start_code, end_code):
+        # Find the path if the start and end station codes are valid so that a path can be calculated
+        try:
+            FN_Print(f"Calculating shortest path from {start_code} to {end_code}", 1)
+            return networkx.shortest_path(self.graph, source=start_code, target=end_code)
+        # Handle the case where no path exists
+        except networkx.NetworkXNoPath:
+            FN_Print(f"No path found between {start_code} and {end_code}.", 0)
+            return None
+        except networkx.NodeNotFound as e:
+            FN_Print(f"Station code error: {e}", 0)
+            return None
+
+    # This method finds uses Dijkstra's algorithm to find the shortest path between two stations while using weighted edges (distance or time)
+    def find_shortest_path(self, start_code, end_code):
+        # Find the path if the start and end station codes are valid so that a path can be calculated
+        try:
+            FN_Print(f"Calculating shortest path from {start_code} to {end_code}", 1)
+            return networkx.shortest_path(self.graph, source=start_code, target=end_code, weight='weight')
+        # Handle the case where no path exists
+        except networkx.NetworkXNoPath:
+            FN_Print(f"No path found between {start_code} and {end_code}.", 0)
+            return None
+        except networkx.NodeNotFound as e:
+            FN_Print(f"Station code error: {e}", 0)
+            return None
+
+    # This method lists all stations for a given line, including their internal branches and connections
+    def list_stations_by_line(self, selected_line):
+        FN_Print(f"\nStations for Line {selected_line}:", 0)
+        line_info = self.lines.get(selected_line, {})
+        if line_info:
+            arrow = f"{Colors['blue']}<->{Colors['default']}"
+            FN_Print(f"Primary Line: " + f" {arrow} ".join(line_info['stations']), 0)
+            FN_Print(f"Internal Branches: " + (", ".join([f"{a} {arrow} {b}" for a, b in line_info['internal_branches']]) or "-"), 0)
+            FN_Print(f"Internal Connections: " + (", ".join([f"{a} {arrow} {b}" for a, b in line_info['internal_connections']]) or "-"), 0)
+            FN_Print(f"External Connections: " + (", ".join([f"{a} {arrow} {b}" for a, b in line_info['external_connections']]) or "-"), 0)
+        else:
+            FN_Print(f"No stations found for the selected line.", 0)
+
+# --- Main Program
+# Loads the station and connection data, and provides a user interface for finding paths
+def main():
+    program_version = "1.9" # Program version
+    FN_Print(f"Starting \"IMT-Singapore-Path-Finder\" (v{program_version})...", 0)
+    # Determine Debug mode
+    global enable_debug
+    while True:
+        user_input = str(input("[INPUT]: Do you want to show Debug messages (Default: No)? [Y/(N)]: "))
+        if user_input in ('y', 'Y'):
+            enable_debug = True
+            break
+        elif user_input in ('n', 'N', ''):
+            enable_debug = False
+            break
+        else:
+            print("[INPUT]: Please press \"Y\" for Yes, \"N\" or Enter for No.")
+
+    # Objects
+    graph_manager = CL_GraphManager() # Create an instance of the GraphManager class
+    station_csv = CL_CSVHandler('MRT-LRT_Station_List.csv') # Load the station data from the CSV file
+    connection_csv = CL_CSVHandler('MRT-LRT_Station_Connections.csv') # Load the connection data from the CSV file
+    graph_manager.load_stations(station_csv) # Load the stations into the graph
+
+    # Primary Execution Thread
+    while True:
+        # Display the main menu options
+        FN_Print(f"[INFO]: Please select one of the following options.", 0)
+        FN_Print(f"{Colors['blue']}[1]{Colors['default']}. Find shortest path (Number of stations)", 0)
+        FN_Print(f"{Colors['cyan']}[2]{Colors['default']}. Find shortest path (Distance traveled)", 0)
+        FN_Print(f"{Colors['green']}[3]{Colors['default']}. Find fastest path (Time consumed)", 0)
+        FN_Print(f"{Colors['purple']}[9]{Colors['default']}. List all Stations by Line", 0)
+        FN_Print(f"{Colors['red']}[0]{Colors['default']}. Exit", 0)
+        choice = input("Enter your choice: ")
+
+        # Handle user choices for finding paths
+        global use_realistic_time_durations
+        if choice in ['1', '2', '3']:
+            mode = 'unweighted' if choice == '1' else 'distance' if choice == '2' else 'time'
+            while True:
+                user_input = str(input("[INPUT]: Do you want to use default time assumptions (Default: Yes)? [(Y)/N]: "))
+                if user_input in ('y', 'Y', ''):
+                    use_realistic_time_durations = False
+                    break
+                elif user_input in ('n', 'N'):
+                    use_realistic_time_durations = True
+                    break
+                else:
+                    print("[INPUT]: Please press \"Y\" for Yes, \"N\" or Enter for No.")
+            # Load connections based on the selected mode
+            graph_manager.load_connections(connection_csv, mode)
+            # Prompt for start and end station codes
+            start = input("Enter start station code (leave blank for random): ").strip()
+            end = input("Enter end station code (leave blank for random): ").strip()
+            # If the user did not provide start or end station codes, select random ones
+            if not start:
+                start = random.choice(list(graph_manager.stations.keys()))
+                FN_Print(f"Randomly selected start station: {start}", 0)
+            if not end:
+                end = random.choice(list(graph_manager.stations.keys()))
+                FN_Print(f"Randomly selected end station: {end}", 0)
+            # Find the path based on the selected mode
+            path = graph_manager.find_shortest_path(start, end) if choice in ['1', '2'] else graph_manager.find_fastest_path(start, end)
+            if path:
+                arrow = f"{Colors['blue']}<->{Colors['default']}"
+                FN_Print(f"Path Found: " + f" {arrow} ".join(path), 0)
+                FN_Print(f"Stations Count: {len(path)}, Hops Count: {len(path) - 1}", 0)
+            else:
+                FN_Print(f"No path found.", 0)
+
+        # List all stations by line
+        elif choice == '9':
+            # List all lines available in the graph
+            lines = list(graph_manager.lines.keys())
+            for i, line in enumerate(lines, 1):
+                FN_Print(f"{i}. {line}", 0)
+            # Prompt the user to select a line
+            line_choice = input("Enter the number of the line to view stations: ")
+            try:
+                # Validate the input and select the line if it exists
+                line_choice = int(line_choice)
+                if 1 <= line_choice <= len(lines):
+                    selected_line = lines[line_choice - 1]
+                    FN_Print(f"Selected Line: {selected_line}", 1)
+                    # List stations for the selected line
+                    graph_manager.list_stations_by_line(selected_line)
+                else:
+                    FN_Print(f"Invalid line number. Please try again.", 0)
+            except ValueError:
+                FN_Print(f"Invalid input. Please enter a number.", 0)
+        
+        # Exit the program
+        elif choice == '0':
+            FN_Print(f"Exiting.", 0)
+            break
+
+        # Handle invalid choices
+        else:
+            FN_Print(f"Invalid choice. Please try again.", 0)
+
+# --- Execution Entry Point
+enable_debug = False  # Debug mode is disabled by default
+use_realistic_time_durations = False # Set realistic time durations to False by default
+if __name__ == "__main__":
+    main()
