@@ -1,0 +1,18 @@
+# ---------------------------------------------------
+# [Requirements]
+# ---------------------------------------------------
+#
+# [Python]:
+#   [Version]:
+#       Requires Python 3.x or higher, with Standard Library (built-in)
+#
+# [Modules]:
+#       [x] csv
+#       [x] math
+#       [x] random
+#       [x] networkx (external)
+#
+# [Notes]:
+#   Only one external dependency required: networkx
+#   Install using: pip install networkx
+# ---------------------------------------------------
