@@ -104,6 +104,7 @@ class CL_GraphManager:
         self.lines = {}  # Dictionary to hold lines and their connections
         self.speed_meters_per_sec_mrt_train = 40.0  # Average speed of MRT trains in meters per second
         self.speed_meters_per_sec_lrt_train = 20.0  # Average speed of LRT trains in meters per second
+        self.boarding_delay_sec = 30  # Boarding delay at each station in seconds
         self.branch_delay_sec = 150  # Delay for internal branches in seconds
         self.internal_connection_delay_sec = 300  # Delay for internal connections in seconds
         self.external_connection_delay_sec = 600  # Delay for external connections in seconds
@@ -176,11 +177,14 @@ class CL_GraphManager:
                                 self.add_edge(from_code, to_code, conn_type, mode)
                                 # Add the connection to the lines dictionary based on the connection type
                                 if conn_type == 'Internal_Connection_Branch':
-                                    self.lines[line_name]['internal_branches'].append((from_code, to_code))
+                                    if (from_code, to_code) not in self.lines[line_name]['internal_branches']:
+                                        self.lines[line_name]['internal_branches'].append((from_code, to_code))
                                 elif conn_type == 'Internal_Connection_Other_Line':
-                                    self.lines[line_name]['internal_connections'].append((from_code, to_code))
+                                    if (from_code, to_code) not in self.lines[line_name]['internal_connections']:
+                                        self.lines[line_name]['internal_connections'].append((from_code, to_code))
                                 elif conn_type == 'External_Connection_Other_Line':
-                                    self.lines[line_name]['external_connections'].append((from_code, to_code))
+                                    if (from_code, to_code) not in self.lines[line_name]['external_connections']:
+                                        self.lines[line_name]['external_connections'].append((from_code, to_code))
         # Close the CSV file after reading
         csv_handler.close()
 
@@ -245,9 +249,9 @@ class CL_GraphManager:
                 else:
                     conn_str = 'Direct Connection'
                     if from_station.train_type == 'MRT':
-                        weight = distance_m / self.speed_meters_per_sec_mrt_train
+                        weight = (distance_m / self.speed_meters_per_sec_mrt_train) + self.boarding_delay_sec
                     else:
-                        weight = distance_m / self.speed_meters_per_sec_lrt_train
+                        weight = (distance_m / self.speed_meters_per_sec_lrt_train) + self.boarding_delay_sec
                 weight_str = f"{weight:.2f} sec"
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -319,6 +323,7 @@ def main():
     station_csv = CL_CSVHandler('MRT-LRT_Station_List.csv') # Load the station data from the CSV file
     connection_csv = CL_CSVHandler('MRT-LRT_Station_Connections.csv') # Load the connection data from the CSV file
     graph_manager.load_stations(station_csv) # Load the stations into the graph
+    graph_manager.load_connections(connection_csv, mode='unweighted') # Load the connections into the graph in unweighted mode (to have the list of stations available)
 
     # Primary Execution Thread
     while True:
@@ -363,6 +368,17 @@ def main():
                 arrow = f"{Colors['blue']}<->{Colors['default']}"
                 FN_Print(f"Path Found: " + f" {arrow} ".join(path), 0)
                 FN_Print(f"Stations Count: {len(path)}, Hops Count: {len(path) - 1}", 0)
+            # Calculate total weight (distance or time)
+                if choice in ['2', '3']: # Only relevant for distance or time modes
+                    total_weight = 0
+                    for i in range(len(path) - 1):
+                        edge_data = graph_manager.graph.get_edge_data(path[i], path[i + 1])
+                        if edge_data and 'weight' in edge_data:
+                            total_weight += edge_data['weight']
+                    if choice == '2':
+                        FN_Print(f"Total Distance: {total_weight:.2f} meters", 0)
+                    elif choice == '3':
+                        FN_Print(f"Total Time: {total_weight:.2f} seconds", 0)
             else:
                 FN_Print(f"No path found.", 0)
 
